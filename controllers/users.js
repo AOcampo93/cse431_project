@@ -1,121 +1,180 @@
+// controllers/users.js
 const mongodb = require('../db/connect');
-const ObjectId = require('mongodb').ObjectId;
+const { ObjectId } = require('mongodb');
 
-/*
- * Controller for managing users.
- *
- * This file provides handlers for CRUD operations on the `users` collection.
- * A user can represent an administrator, service provider or client.  It
- * contains basic identifying information such as name, phone and email.  In
- * addition, we persist the authentication provider and ID in `authProvider`
- * and `authId`.  See `swagger.json` for a description of the expected
- * payloads.  All responses conform to the JSON API pattern used elsewhere in
- * this project.
+/**
+ * Helpers
  */
+const isValidId = (id) => ObjectId.isValid(id);
+const sanitize = (obj) =>
+  Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 
-// Return all users
+/**
+ * GET /users
+ * Return all users
+ */
 const getAll = async (req, res) => {
   try {
     const result = await mongodb.getDb().db().collection('users').find();
-    result.toArray().then((lists) => {
-      res.setHeader('Content-Type', 'application/json');
-      res.status(200).json(lists);
-    });
+    const users = await result.toArray();
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json(users);
   } catch (err) {
-    res.status(500).json(err);
+    console.error('getAll users error:', err);
+    return res.status(500).json({ error: true, message: 'Internal Server Error' });
   }
 };
 
-// Return a single user by ID
+/**
+ * GET /users/:id
+ * Return a single user by ID
+ */
 const getSingle = async (req, res) => {
   try {
-    const userId = new ObjectId(req.params.id);
-    const result = await mongodb.getDb().db().collection('users').find({ _id: userId });
-    result.toArray().then((lists) => {
-      res.setHeader('Content-Type', 'application/json');
-      res.status(200).json(lists[0]);
-    });
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: true, message: 'Invalid user id' });
+    }
+
+    const user = await mongodb
+      .getDb()
+      .db()
+      .collection('users')
+      .findOne({ _id: new ObjectId(id) });
+
+    if (!user) {
+      return res.status(404).json({ error: true, message: 'User not found' });
+    }
+
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json(user);
   } catch (err) {
-    res.status(500).json(err);
+    console.error('getSingle user error:', err);
+    return res.status(500).json({ error: true, message: 'Internal Server Error' });
   }
 };
 
-// Create a new user
+/**
+ * POST /users
+ * Create a new user
+ */
 const createUser = async (req, res) => {
   try {
+    const now = new Date();
     const user = {
-      authProvider: req.body.authProvider,
+      authProvider: req.body.authProvider, // "google" | "credentials"
       authId: req.body.authId || null,
       email: req.body.email,
-      password: req.body.password || null,
+      password: req.body.password || null, // (sin hash en esta versión)
       name: req.body.name,
       phone: req.body.phone,
-      role: req.body.role || 'client',
+      role: req.body.role || 'client', // "admin" | "provider" | "client"
       avatarUrl: req.body.avatarUrl || null,
-      createdAt: new Date(),
-      updatedAt: new Date()
+      createdAt: now,
+      updatedAt: now
     };
+
     const response = await mongodb.getDb().db().collection('users').insertOne(user);
     if (response.acknowledged) {
-      res.status(201).json(response);
-    } else {
-      res.status(500).json(response.error || 'Some error occurred while creating the user.');
+      // Devolver el documento recién creado
+      const created = await mongodb
+        .getDb()
+        .db()
+        .collection('users')
+        .findOne({ _id: response.insertedId });
+      return res.status(201).json(created);
     }
+    return res
+      .status(500)
+      .json({ error: true, message: 'Some error occurred while creating the user.' });
   } catch (err) {
-    res.status(500).json(err);
+    console.error('createUser error:', err);
+    // Manejo de duplicados (por ejemplo índice único en email)
+    if (err?.code === 11000) {
+      return res.status(409).json({ error: true, message: 'Email already in use' });
+    }
+    return res.status(500).json({ error: true, message: 'Internal Server Error' });
   }
 };
 
-// Update an existing user
+/**
+ * PUT /users/:id
+ * Update an existing user (partial update using $set)
+ */
 const updateUser = async (req, res) => {
   try {
-    const userId = new ObjectId(req.params.id);
-    // Build the updated user object.  We preserve existing values if they are
-    // omitted from the request body.  Note: for a production system you
-    // probably want to limit which fields can be updated and handle null/undefined
-    // more strictly.
-    const updatedUser = {
-      authProvider: req.body.authProvider,
-      authId: req.body.authId || null,
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: true, message: 'Invalid user id' });
+    }
+
+    // Solo aplicamos campos presentes en el body
+    const updates = sanitize({
+      authProvider: req.body.authProvider, // "google" | "credentials"
+      authId: req.body.authId,
       email: req.body.email,
-      password: req.body.password || null,
+      password: req.body.password, // (sin hash en esta versión)
       name: req.body.name,
       phone: req.body.phone,
       role: req.body.role,
-      avatarUrl: req.body.avatarUrl || null,
-      updatedAt: new Date()
-    };
-    const response = await mongodb
+      avatarUrl: req.body.avatarUrl
+    });
+
+    // Si no hay nada que actualizar
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: true, message: 'No fields to update' });
+    }
+
+    const result = await mongodb
       .getDb()
       .db()
       .collection('users')
-      .replaceOne({ _id: userId }, updatedUser);
-    if (response.modifiedCount > 0) {
-      res.status(204).send();
-    } else {
-      res.status(500).json(response.error || 'Some error occurred while updating the user.');
+      .updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updates, $currentDate: { updatedAt: true } },
+        { upsert: false }
+      );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: true, message: 'User not found' });
     }
+
+    // Devuelve el documento actualizado
+    const user = await mongodb.getDb().db().collection('users').findOne({ _id: new ObjectId(id) });
+    return res.status(200).json(user);
   } catch (err) {
-    res.status(500).json(err);
+    console.error('updateUser error:', err);
+    if (err?.code === 11000) {
+      return res.status(409).json({ error: true, message: 'Email already in use' });
+    }
+    return res.status(500).json({ error: true, message: 'Internal Server Error' });
   }
 };
 
-// Delete a user
+/**
+ * DELETE /users/:id
+ * Delete a user
+ */
 const deleteUser = async (req, res) => {
   try {
-    const userId = new ObjectId(req.params.id);
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: true, message: 'Invalid user id' });
+    }
+
     const response = await mongodb
       .getDb()
       .db()
       .collection('users')
-      .remove({ _id: userId }, true);
+      .deleteOne({ _id: new ObjectId(id) });
+
     if (response.deletedCount > 0) {
-      res.status(204).send();
-    } else {
-      res.status(500).json(response.error || 'Some error occurred while deleting the user.');
+      return res.status(204).send();
     }
+    return res.status(404).json({ error: true, message: 'User not found' });
   } catch (err) {
-    res.status(500).json(err);
+    console.error('deleteUser error:', err);
+    return res.status(500).json({ error: true, message: 'Internal Server Error' });
   }
 };
 
