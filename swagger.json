@@ -1,0 +1,569 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Appointments API",
+    "description": "API for scheduling appointments between clients and service providers.",
+    "version": "1.0.0"
+  },
+  "host": "localhost:3000",
+  "basePath": "/",
+  "tags": [
+    {
+      "name": "Users",
+      "description": "Operations about users"
+    },
+    {
+      "name": "Services",
+      "description": "Operations about services"
+    },
+    {
+      "name": "Providers",
+      "description": "Operations about providers"
+    },
+    {
+      "name": "Appointments",
+      "description": "Operations about appointments"
+    }
+  ],
+  "schemes": [
+    "http"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/users/": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get all users",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/User"
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Users"],
+        "summary": "Create a new user",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/UserInput"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get a user by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/User"
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Users"],
+        "summary": "Update a user by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/UserInput"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Users"],
+        "summary": "Delete a user by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/services/": {
+      "get": {
+        "tags": ["Services"],
+        "summary": "Get all services",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Service"
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Services"],
+        "summary": "Create a new service",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/ServiceInput"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/services/{id}": {
+      "get": {
+        "tags": ["Services"],
+        "summary": "Get a service by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Service"
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Services"],
+        "summary": "Update a service by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/ServiceInput"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Services"],
+        "summary": "Delete a service by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/providers/": {
+      "get": {
+        "tags": ["Providers"],
+        "summary": "Get all providers",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Provider"
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Providers"],
+        "summary": "Create a new provider",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/ProviderInput"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/providers/{id}": {
+      "get": {
+        "tags": ["Providers"],
+        "summary": "Get a provider by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Provider"
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Providers"],
+        "summary": "Update a provider by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/ProviderInput"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Providers"],
+        "summary": "Delete a provider by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/appointments/": {
+      "get": {
+        "tags": ["Appointments"],
+        "summary": "Get all appointments",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Appointment"
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Appointments"],
+        "summary": "Create a new appointment",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/AppointmentInput"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/appointments/{id}": {
+      "get": {
+        "tags": ["Appointments"],
+        "summary": "Get an appointment by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Appointment"
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Appointments"],
+        "summary": "Update an appointment by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "$ref": "#/definitions/AppointmentInput"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Appointments"],
+        "summary": "Delete an appointment by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "User": {
+      "type": "object",
+      "properties": {
+        "authProvider": { "type": "string", "example": "google" },
+        "authId": { "type": "string", "example": "1092837498127398" },
+        "email": { "type": "string", "example": "user@example.com" },
+        "password": { "type": "string", "example": "hash" },
+        "name": { "type": "string", "example": "John Doe" },
+        "phone": { "type": "string", "example": "+1234567890" },
+        "role": { "type": "string", "example": "client" },
+        "avatarUrl": { "type": "string", "example": "https://example.com/avatar.png" },
+        "createdAt": { "type": "string", "example": "2025-10-14T00:00:00Z" },
+        "updatedAt": { "type": "string", "example": "2025-10-14T00:00:00Z" }
+      }
+    },
+    "UserInput": {
+      "type": "object",
+      "properties": {
+        "authProvider": { "type": "string", "example": "google" },
+        "authId": { "type": "string", "example": "1092837498127398" },
+        "email": { "type": "string", "example": "user@example.com" },
+        "password": { "type": "string", "example": "plaintext" },
+        "name": { "type": "string", "example": "John Doe" },
+        "phone": { "type": "string", "example": "+1234567890" },
+        "role": { "type": "string", "example": "client" },
+        "avatarUrl": { "type": "string", "example": "https://example.com/avatar.png" }
+      }
+    },
+    "Service": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "example": "Consulta general" },
+        "durationMin": { "type": "integer", "example": 60 },
+        "price": { "type": "number", "example": 40.0 },
+        "description": { "type": "string", "example": "Sesión estándar" },
+        "category": { "type": "string", "example": "General" },
+        "isActive": { "type": "boolean", "example": true }
+      }
+    },
+    "ServiceInput": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "example": "Consulta general" },
+        "durationMin": { "type": "integer", "example": 60 },
+        "price": { "type": "number", "example": 40.0 },
+        "description": { "type": "string", "example": "Sesión estándar" },
+        "category": { "type": "string", "example": "General" },
+        "isActive": { "type": "boolean", "example": true }
+      }
+    },
+    "Provider": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "example": "Laura Mendes" },
+        "email": { "type": "string", "example": "laura@example.com" },
+        "phone": { "type": "string", "example": "+123456789" },
+        "specialties": { "type": "array", "items": { "type": "string" }, "example": ["Consulta general"] },
+        "availability": { "type": "object", "example": { "days": ["monday"], "startHour": "09:00", "endHour": "18:00" } },
+        "isActive": { "type": "boolean", "example": true }
+      }
+    },
+    "ProviderInput": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "example": "Laura Mendes" },
+        "email": { "type": "string", "example": "laura@example.com" },
+        "phone": { "type": "string", "example": "+123456789" },
+        "specialties": { "type": "array", "items": { "type": "string" }, "example": ["Consulta general"] },
+        "availability": { "type": "object", "example": { "days": ["monday"], "startHour": "09:00", "endHour": "18:00" } },
+        "isActive": { "type": "boolean", "example": true }
+      }
+    },
+    "Appointment": {
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string", "example": "66fa...c1" },
+        "providerId": { "type": "string", "example": "66fb...a2" },
+        "serviceId": { "type": "string", "example": "66fc...b3" },
+        "startAt": { "type": "string", "example": "2025-10-20T10:00:00.000Z" },
+        "endAt": { "type": "string", "example": "2025-10-20T10:30:00.000Z" },
+        "status": { "type": "string", "example": "scheduled" },
+        "notes": { "type": "string", "example": "Primera sesión" },
+        "createdBy": { "type": "string", "example": "66f..." },
+        "createdAt": { "type": "string", "example": "2025-10-14T00:00:00.000Z" },
+        "updatedAt": { "type": "string", "example": "2025-10-14T00:00:00.000Z" }
+      }
+    },
+    "AppointmentInput": {
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string", "example": "66fa...c1" },
+        "providerId": { "type": "string", "example": "66fb...a2" },
+        "serviceId": { "type": "string", "example": "66fc...b3" },
+        "startAt": { "type": "string", "example": "2025-10-20T10:00:00.000Z" },
+        "endAt": { "type": "string", "example": "2025-10-20T10:30:00.000Z" },
+        "status": { "type": "string", "example": "scheduled" },
+        "notes": { "type": "string", "example": "Primera sesión" },
+        "createdBy": { "type": "string", "example": "66f..." }
+      }
+    }
+  }
+}
