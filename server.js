@@ -2,6 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const mongodb = require('./db/connect');
+const errorHandler = require('./middleware/error');
 
 const swaggerUi = require('swagger-ui-express');
 const rawSpec = require('./swagger.json');
@@ -70,6 +71,9 @@ app.use('/appointments', require('./routes/appointments'));
 
 // Fallback to the default index router (currently exposes Swagger UI)
 app.use('/', require('./routes'));
+
+// Global error handler
+app.use(errorHandler);
 
 /* ---------- DB & server ---------- */
 mongodb.initDb((err) => {

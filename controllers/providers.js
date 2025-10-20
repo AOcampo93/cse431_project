@@ -1,108 +1,138 @@
-const mongodb = require('../db/connect');
-const ObjectId = require('mongodb').ObjectId;
+const mongoose = require('mongoose');
+const Provider = require('../models/provider');
 
-/*
- * Controller for managing providers (service providers).
- *
- * Providers represent the individuals or businesses offering services
- * (hairdressers, doctors, mechanics, trainers, etc.).  The optional
- * `availability` field can be used to store scheduling information but
- * is treated as an opaque object in this basic controller.  See
- * `swagger.json` for the expected request payloads.
+/**
+ * Helpers
  */
+const isValidId = (id) => mongoose.isValidObjectId(id);
+const sanitize = (obj) =>
+  Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 
-// Return all providers
-const getAll = async (req, res) => {
+/**
+ * GET /providers
+ * Return all providers
+ */
+const getAll = async (req, res, next) => {
   try {
-    const result = await mongodb.getDb().db().collection('providers').find();
-    result.toArray().then((lists) => {
-      res.setHeader('Content-Type', 'application/json');
-      res.status(200).json(lists);
-    });
+    const providers = await Provider.find();
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json(providers);
   } catch (err) {
-    res.status(500).json(err);
+    console.error('getAll providers error:', err);
+    return next(err);
   }
 };
 
-// Return a single provider by ID
-const getSingle = async (req, res) => {
+/**
+ * GET /providers/:id
+ * Return a single provider by ID
+ */
+const getSingle = async (req, res, next) => {
   try {
-    const providerId = new ObjectId(req.params.id);
-    const result = await mongodb.getDb().db().collection('providers').find({ _id: providerId });
-    result.toArray().then((lists) => {
-      res.setHeader('Content-Type', 'application/json');
-      res.status(200).json(lists[0]);
-    });
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: true, message: 'Invalid provider id' });
+    }
+    const provider = await Provider.findById(id);
+    if (!provider) {
+      return res.status(404).json({ error: true, message: 'Provider not found' });
+    }
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json(provider);
   } catch (err) {
-    res.status(500).json(err);
+    console.error('getSingle provider error:', err);
+    return next(err);
   }
 };
 
-// Create a new provider
-const createProvider = async (req, res) => {
+/**
+ * POST /providers
+ * Create a new provider
+ */
+const createProvider = async (req, res, next) => {
   try {
-    const provider = {
+    const { name, email, phone, specialties, availability, isActive } = req.body;
+    const provider = new Provider({
+      name,
+      email,
+      phone,
+      specialties,
+      availability,
+      isActive,
+    });
+    await provider.save();
+    return res.status(201).json(provider);
+  } catch (err) {
+    console.error('createProvider error:', err);
+    if (err?.code === 11000) {
+      return res.status(409).json({ error: true, message: 'Email already in use' });
+    }
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ error: true, message: err.message });
+    }
+    return next(err);
+  }
+};
+
+/**
+ * PUT /providers/:id
+ * Update an existing provider (partial update)
+ */
+const updateProvider = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: true, message: 'Invalid provider id' });
+    }
+    const updates = sanitize({
       name: req.body.name,
       email: req.body.email,
       phone: req.body.phone,
-      specialties: req.body.specialties || [],
-      availability: req.body.availability || null,
-      isActive: req.body.isActive !== undefined ? req.body.isActive : true
-    };
-    const response = await mongodb.getDb().db().collection('providers').insertOne(provider);
-    if (response.acknowledged) {
-      res.status(201).json(response);
-    } else {
-      res.status(500).json(response.error || 'Some error occurred while creating the provider.');
+      specialties: req.body.specialties,
+      availability: req.body.availability,
+      isActive: req.body.isActive,
+    });
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: true, message: 'No fields to update' });
     }
+    const updated = await Provider.findByIdAndUpdate(id, updates, {
+      new: true,
+      runValidators: true,
+    });
+    if (!updated) {
+      return res.status(404).json({ error: true, message: 'Provider not found' });
+    }
+    return res.status(200).json(updated);
   } catch (err) {
-    res.status(500).json(err);
+    console.error('updateProvider error:', err);
+    if (err?.code === 11000) {
+      return res.status(409).json({ error: true, message: 'Email already in use' });
+    }
+    if (err.name === 'ValidationError' || err.name === 'CastError') {
+      return res.status(400).json({ error: true, message: err.message });
+    }
+    return next(err);
   }
 };
 
-// Update an existing provider
-const updateProvider = async (req, res) => {
+/**
+ * DELETE /providers/:id
+ * Delete a provider
+ */
+const deleteProvider = async (req, res, next) => {
   try {
-    const providerId = new ObjectId(req.params.id);
-    const updatedProvider = {
-      name: req.body.name,
-      email: req.body.email,
-      phone: req.body.phone,
-      specialties: req.body.specialties || [],
-      availability: req.body.availability || null,
-      isActive: req.body.isActive !== undefined ? req.body.isActive : true
-    };
-    const response = await mongodb
-      .getDb()
-      .db()
-      .collection('providers')
-      .replaceOne({ _id: providerId }, updatedProvider);
-    if (response.modifiedCount > 0) {
-      res.status(204).send();
-    } else {
-      res.status(500).json(response.error || 'Some error occurred while updating the provider.');
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: true, message: 'Invalid provider id' });
     }
-  } catch (err) {
-    res.status(500).json(err);
-  }
-};
-
-// Delete a provider
-const deleteProvider = async (req, res) => {
-  try {
-    const providerId = new ObjectId(req.params.id);
-    const response = await mongodb
-      .getDb()
-      .db()
-      .collection('providers')
-      .remove({ _id: providerId }, true);
-    if (response.deletedCount > 0) {
-      res.status(204).send();
-    } else {
-      res.status(500).json(response.error || 'Some error occurred while deleting the provider.');
+    const deleted = await Provider.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({ error: true, message: 'Provider not found' });
     }
+    return res.status(204).send();
   } catch (err) {
-    res.status(500).json(err);
+    console.error('deleteProvider error:', err);
+    return next(err);
   }
 };
 
@@ -111,5 +141,5 @@ module.exports = {
   getSingle,
   createProvider,
   updateProvider,
-  deleteProvider
+  deleteProvider,
 };

@@ -1,107 +1,132 @@
-const mongodb = require('../db/connect');
-const ObjectId = require('mongodb').ObjectId;
+const mongoose = require('mongoose');
+const Service = require('../models/service');
 
-/*
- * Controller for managing services.
- *
- * Services represent the offerings that a business or provider can schedule.
- * Each service has a name, duration in minutes, price and optional
- * description and category.  The `isActive` flag controls whether a service
- * can be booked.  See `swagger.json` for the expected request payloads.
+/**
+ * Helpers
  */
+const isValidId = (id) => mongoose.isValidObjectId(id);
+const sanitize = (obj) =>
+  Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 
-// Return all services
-const getAll = async (req, res) => {
+/**
+ * GET /services
+ * Return all services
+ */
+const getAll = async (req, res, next) => {
   try {
-    const result = await mongodb.getDb().db().collection('services').find();
-    result.toArray().then((lists) => {
-      res.setHeader('Content-Type', 'application/json');
-      res.status(200).json(lists);
-    });
+    const services = await Service.find();
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json(services);
   } catch (err) {
-    res.status(500).json(err);
+    console.error('getAll services error:', err);
+    return next(err);
   }
 };
 
-// Return a single service by ID
-const getSingle = async (req, res) => {
+/**
+ * GET /services/:id
+ * Return a single service by ID
+ */
+const getSingle = async (req, res, next) => {
   try {
-    const serviceId = new ObjectId(req.params.id);
-    const result = await mongodb.getDb().db().collection('services').find({ _id: serviceId });
-    result.toArray().then((lists) => {
-      res.setHeader('Content-Type', 'application/json');
-      res.status(200).json(lists[0]);
-    });
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: true, message: 'Invalid service id' });
+    }
+    const service = await Service.findById(id);
+    if (!service) {
+      return res.status(404).json({ error: true, message: 'Service not found' });
+    }
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json(service);
   } catch (err) {
-    res.status(500).json(err);
+    console.error('getSingle service error:', err);
+    return next(err);
   }
 };
 
-// Create a new service
-const createService = async (req, res) => {
+/**
+ * POST /services
+ * Create a new service
+ */
+const createService = async (req, res, next) => {
   try {
-    const service = {
+    const { name, durationMin, price, description, category, isActive } = req.body;
+    const service = new Service({
+      name,
+      durationMin,
+      price,
+      description,
+      category,
+      isActive,
+    });
+    await service.save();
+    return res.status(201).json(service);
+  } catch (err) {
+    console.error('createService error:', err);
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ error: true, message: err.message });
+    }
+    return next(err);
+  }
+};
+
+/**
+ * PUT /services/:id
+ * Update an existing service (partial update)
+ */
+const updateService = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: true, message: 'Invalid service id' });
+    }
+    const updates = sanitize({
       name: req.body.name,
       durationMin: req.body.durationMin,
       price: req.body.price,
-      description: req.body.description || null,
-      category: req.body.category || null,
-      isActive: req.body.isActive !== undefined ? req.body.isActive : true
-    };
-    const response = await mongodb.getDb().db().collection('services').insertOne(service);
-    if (response.acknowledged) {
-      res.status(201).json(response);
-    } else {
-      res.status(500).json(response.error || 'Some error occurred while creating the service.');
+      description: req.body.description,
+      category: req.body.category,
+      isActive: req.body.isActive,
+    });
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: true, message: 'No fields to update' });
     }
+    const updated = await Service.findByIdAndUpdate(id, updates, {
+      new: true,
+      runValidators: true,
+    });
+    if (!updated) {
+      return res.status(404).json({ error: true, message: 'Service not found' });
+    }
+    return res.status(200).json(updated);
   } catch (err) {
-    res.status(500).json(err);
+    console.error('updateService error:', err);
+    if (err.name === 'ValidationError' || err.name === 'CastError') {
+      return res.status(400).json({ error: true, message: err.message });
+    }
+    return next(err);
   }
 };
 
-// Update an existing service
-const updateService = async (req, res) => {
+/**
+ * DELETE /services/:id
+ * Delete a service
+ */
+const deleteService = async (req, res, next) => {
   try {
-    const serviceId = new ObjectId(req.params.id);
-    const updatedService = {
-      name: req.body.name,
-      durationMin: req.body.durationMin,
-      price: req.body.price,
-      description: req.body.description || null,
-      category: req.body.category || null,
-      isActive: req.body.isActive !== undefined ? req.body.isActive : true
-    };
-    const response = await mongodb
-      .getDb()
-      .db()
-      .collection('services')
-      .replaceOne({ _id: serviceId }, updatedService);
-    if (response.modifiedCount > 0) {
-      res.status(204).send();
-    } else {
-      res.status(500).json(response.error || 'Some error occurred while updating the service.');
+    const { id } = req.params;
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: true, message: 'Invalid service id' });
     }
-  } catch (err) {
-    res.status(500).json(err);
-  }
-};
-
-// Delete a service
-const deleteService = async (req, res) => {
-  try {
-    const serviceId = new ObjectId(req.params.id);
-    const response = await mongodb
-      .getDb()
-      .db()
-      .collection('services')
-      .remove({ _id: serviceId }, true);
-    if (response.deletedCount > 0) {
-      res.status(204).send();
-    } else {
-      res.status(500).json(response.error || 'Some error occurred while deleting the service.');
+    const deleted = await Service.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({ error: true, message: 'Service not found' });
     }
+    return res.status(204).send();
   } catch (err) {
-    res.status(500).json(err);
+    console.error('deleteService error:', err);
+    return next(err);
   }
 };
 
@@ -110,5 +135,5 @@ module.exports = {
   getSingle,
   createService,
   updateService,
-  deleteService
+  deleteService,
 };

@@ -1,221 +1,250 @@
 // controllers/appointments.js
-const mongodb = require('../db/connect');
-const { ObjectId } = require('mongodb');
+const mongoose = require('mongoose');
+const Appointment = require('../models/appointment');
+const Service = require('../models/service');
 
-/* -------------------------------- Helpers -------------------------------- */
-
-const isValidId = (id) => ObjectId.isValid(id);
-const toObjectIdOrNull = (val, fieldName, required = false) => {
-  if (val === undefined || val === null) {
-    if (required) throw badRequest(`${fieldName} is required`);
-    return null;
-  }
-  if (!isValidId(val)) throw badRequest(`${fieldName} must be a valid ObjectId`);
-  return new ObjectId(val);
-};
-
-const toDateOrThrow = (val, fieldName, required = false) => {
-  if (val === undefined || val === null) {
-    if (required) throw badRequest(`${fieldName} is required`);
-    return null;
-  }
-  const d = new Date(val);
-  if (isNaN(d.getTime())) throw badRequest(`${fieldName} must be a valid ISO date`);
-  return d;
-};
-
+/**
+ * Helpers
+ */
+const isValidId = (id) => mongoose.isValidObjectId(id);
 const sanitize = (obj) =>
   Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined));
 
-const badRequest = (message) => {
-  const err = new Error(message);
-  err.status = 400;
-  return err;
-};
-
-const notFound = (message) => {
-  const err = new Error(message);
-  err.status = 404;
-  return err;
-};
-
-const STATUSES = new Set(['scheduled', 'confirmed', 'completed', 'cancelled']);
-
-/* ------------------------------ DB Shortcuts ------------------------------ */
-
-const colAppointments = () => mongodb.getDb().db().collection('appointments');
-const colServices = () => mongodb.getDb().db().collection('services');
-
-/* ------------------------------- Controllers ------------------------------ */
-
-// GET /appointments
-const getAll = async (req, res) => {
+/**
+ * GET /appointments
+ * Return all appointments
+ */
+const getAll = async (req, res, next) => {
   try {
-    const cursor = await colAppointments().find();
-    const data = await cursor.toArray();
+    const appointments = await Appointment.find();
     res.setHeader('Content-Type', 'application/json');
-    return res.status(200).json(data);
+    return res.status(200).json(appointments);
   } catch (err) {
     console.error('appointments.getAll error:', err);
-    return res.status(500).json({ error: true, message: 'Internal Server Error' });
+    return next(err);
   }
 };
 
-// GET /appointments/:id
-const getSingle = async (req, res) => {
+/**
+ * GET /appointments/:id
+ * Return a single appointment by ID
+ */
+const getSingle = async (req, res, next) => {
   try {
     const { id } = req.params;
-    if (!isValidId(id)) throw badRequest('Invalid appointment id');
-
-    const doc = await colAppointments().findOne({ _id: new ObjectId(id) });
-    if (!doc) throw notFound('Appointment not found');
-
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: true, message: 'Invalid appointment id' });
+    }
+    const appointment = await Appointment.findById(id);
+    if (!appointment) {
+      return res.status(404).json({ error: true, message: 'Appointment not found' });
+    }
     res.setHeader('Content-Type', 'application/json');
-    return res.status(200).json(doc);
+    return res.status(200).json(appointment);
   } catch (err) {
     console.error('appointments.getSingle error:', err);
-    const code = err.status || 500;
-    return res.status(code).json({ error: true, message: err.message || 'Internal Server Error' });
+    return next(err);
   }
 };
 
-// POST /appointments
-const createAppointment = async (req, res) => {
+/**
+ * POST /appointments
+ * Create a new appointment
+ */
+const createAppointment = async (req, res, next) => {
   try {
-    // Required fields
-    const clientId = toObjectIdOrNull(req.body.clientId, 'clientId', true);
-    const providerId = toObjectIdOrNull(req.body.providerId, 'providerId', true);
-    const serviceId = toObjectIdOrNull(req.body.serviceId, 'serviceId', true);
-    const startAt = toDateOrThrow(req.body.startAt, 'startAt', true);
-
-    // Optional / derived
-    let endAt = req.body.endAt ? toDateOrThrow(req.body.endAt, 'endAt') : null;
-
-    // Status
-    const status = req.body.status || 'scheduled';
-    if (!STATUSES.has(status)) throw badRequest('status must be one of: scheduled, confirmed, completed, cancelled');
-
-    // Compute endAt from service if missing
-    if (!endAt) {
-      const service = await colServices().findOne({ _id: serviceId });
-      if (service?.durationMin) {
-        endAt = new Date(startAt.getTime() + Number(service.durationMin) * 60000);
-      } else {
-        throw badRequest('endAt is required when service has no durationMin');
-      }
-    }
-
-    const now = new Date();
-    const appointment = {
+    let {
       clientId,
       providerId,
       serviceId,
       startAt,
       endAt,
       status,
-      notes: req.body.notes || null,
-      createdBy: toObjectIdOrNull(req.body.createdBy, 'createdBy', false),
-      createdAt: now,
-      updatedAt: now
-    };
-
-    const response = await colAppointments().insertOne(appointment);
-    if (!response.acknowledged) {
-      return res
-        .status(500)
-        .json({ error: true, message: 'Some error occurred while creating the appointment.' });
+      notes,
+      createdBy,
+    } = req.body;
+    // Validate required fields
+    if (!clientId || !providerId || !serviceId || !startAt) {
+      return res.status(400).json({ error: true, message: 'clientId, providerId, serviceId and startAt are required' });
     }
-
-    const created = await colAppointments().findOne({ _id: response.insertedId });
-    return res.status(201).json(created);
+    if (!isValidId(clientId)) {
+      return res.status(400).json({ error: true, message: 'clientId must be a valid ObjectId' });
+    }
+    if (!isValidId(providerId)) {
+      return res.status(400).json({ error: true, message: 'providerId must be a valid ObjectId' });
+    }
+    if (!isValidId(serviceId)) {
+      return res.status(400).json({ error: true, message: 'serviceId must be a valid ObjectId' });
+    }
+    if (createdBy && !isValidId(createdBy)) {
+      return res.status(400).json({ error: true, message: 'createdBy must be a valid ObjectId' });
+    }
+    // Convert to ObjectIds
+    const clientObj = new mongoose.Types.ObjectId(clientId);
+    const providerObj = new mongoose.Types.ObjectId(providerId);
+    const serviceObj = new mongoose.Types.ObjectId(serviceId);
+    const createdByObj = createdBy ? new mongoose.Types.ObjectId(createdBy) : undefined;
+    // Convert dates
+    const startDate = new Date(startAt);
+    if (isNaN(startDate.getTime())) {
+      return res.status(400).json({ error: true, message: 'startAt must be a valid ISO date' });
+    }
+    let endDate = null;
+    if (endAt) {
+      const endD = new Date(endAt);
+      if (isNaN(endD.getTime())) {
+        return res.status(400).json({ error: true, message: 'endAt must be a valid ISO date' });
+      }
+      endDate = endD;
+    }
+    // Validate status
+    const allowedStatuses = ['scheduled', 'confirmed', 'completed', 'cancelled'];
+    if (status && !allowedStatuses.includes(status)) {
+      return res.status(400).json({ error: true, message: 'status must be one of: scheduled, confirmed, completed, cancelled' });
+    }
+    // Compute endAt if missing
+    if (!endDate) {
+      const service = await Service.findById(serviceObj);
+      if (service && service.durationMin) {
+        endDate = new Date(startDate.getTime() + Number(service.durationMin) * 60000);
+      } else {
+        return res.status(400).json({ error: true, message: 'endAt is required when service has no durationMin' });
+      }
+    }
+    const appointment = new Appointment({
+      clientId: clientObj,
+      providerId: providerObj,
+      serviceId: serviceObj,
+      startAt: startDate,
+      endAt: endDate,
+      status,
+      notes,
+      createdBy: createdByObj,
+    });
+    await appointment.save();
+    return res.status(201).json(appointment);
   } catch (err) {
     console.error('appointments.create error:', err);
-    const code = err.status || 500;
-    return res.status(code).json({ error: true, message: err.message || 'Internal Server Error' });
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ error: true, message: err.message });
+    }
+    if (err.name === 'CastError') {
+      return res.status(400).json({ error: true, message: 'Invalid ObjectId provided' });
+    }
+    return next(err);
   }
 };
 
-// PUT /appointments/:id (partial update)
-const updateAppointment = async (req, res) => {
+/**
+ * PUT /appointments/:id
+ * Update an existing appointment (partial update)
+ */
+const updateAppointment = async (req, res, next) => {
   try {
     const { id } = req.params;
-    if (!isValidId(id)) throw badRequest('Invalid appointment id');
-
-    const existing = await colAppointments().findOne({ _id: new ObjectId(id) });
-    if (!existing) throw notFound('Appointment not found');
-
-    // Build partial updates (convert types if present)
-    const updates = sanitize({
-      clientId:
-        req.body.clientId !== undefined
-          ? toObjectIdOrNull(req.body.clientId, 'clientId', true)
-          : undefined,
-      providerId:
-        req.body.providerId !== undefined
-          ? toObjectIdOrNull(req.body.providerId, 'providerId', true)
-          : undefined,
-      serviceId:
-        req.body.serviceId !== undefined
-          ? toObjectIdOrNull(req.body.serviceId, 'serviceId', true)
-          : undefined,
-      startAt: req.body.startAt !== undefined ? toDateOrThrow(req.body.startAt, 'startAt', true) : undefined,
-      endAt: req.body.endAt !== undefined ? toDateOrThrow(req.body.endAt, 'endAt') : undefined,
-      status: req.body.status,
-      notes: req.body.notes,
-      createdBy:
-        req.body.createdBy !== undefined
-          ? toObjectIdOrNull(req.body.createdBy, 'createdBy', false)
-          : undefined
-    });
-
-    // Validate status if provided
-    if (updates.status && !STATUSES.has(updates.status)) {
-      throw badRequest('status must be one of: scheduled, confirmed, completed, cancelled');
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: true, message: 'Invalid appointment id' });
     }
-
-    // Compute endAt if not provided and we have start/service info
-    const nextStartAt = updates.startAt !== undefined ? updates.startAt : existing.startAt;
+    const existing = await Appointment.findById(id);
+    if (!existing) {
+      return res.status(404).json({ error: true, message: 'Appointment not found' });
+    }
+    const updates = {};
+    if (req.body.clientId !== undefined) {
+      if (!isValidId(req.body.clientId)) {
+        return res.status(400).json({ error: true, message: 'clientId must be a valid ObjectId' });
+      }
+      updates.clientId = new mongoose.Types.ObjectId(req.body.clientId);
+    }
+    if (req.body.providerId !== undefined) {
+      if (!isValidId(req.body.providerId)) {
+        return res.status(400).json({ error: true, message: 'providerId must be a valid ObjectId' });
+      }
+      updates.providerId = new mongoose.Types.ObjectId(req.body.providerId);
+    }
+    if (req.body.serviceId !== undefined) {
+      if (!isValidId(req.body.serviceId)) {
+        return res.status(400).json({ error: true, message: 'serviceId must be a valid ObjectId' });
+      }
+      updates.serviceId = new mongoose.Types.ObjectId(req.body.serviceId);
+    }
+    if (req.body.startAt !== undefined) {
+      const start = new Date(req.body.startAt);
+      if (isNaN(start.getTime())) {
+        return res.status(400).json({ error: true, message: 'startAt must be a valid ISO date' });
+      }
+      updates.startAt = start;
+    }
+    if (req.body.endAt !== undefined) {
+      const end = new Date(req.body.endAt);
+      if (isNaN(end.getTime())) {
+        return res.status(400).json({ error: true, message: 'endAt must be a valid ISO date' });
+      }
+      updates.endAt = end;
+    }
+    if (req.body.status !== undefined) {
+      const allowedStatuses = ['scheduled', 'confirmed', 'completed', 'cancelled'];
+      if (!allowedStatuses.includes(req.body.status)) {
+        return res.status(400).json({ error: true, message: 'status must be one of: scheduled, confirmed, completed, cancelled' });
+      }
+      updates.status = req.body.status;
+    }
+    if (req.body.notes !== undefined) {
+      updates.notes = req.body.notes;
+    }
+    if (req.body.createdBy !== undefined) {
+      if (req.body.createdBy && !isValidId(req.body.createdBy)) {
+        return res.status(400).json({ error: true, message: 'createdBy must be a valid ObjectId' });
+      }
+      updates.createdBy = req.body.createdBy ? new mongoose.Types.ObjectId(req.body.createdBy) : undefined;
+    }
+    // Compute endAt if not provided but start/service changed
+    const nextStart = updates.startAt !== undefined ? updates.startAt : existing.startAt;
     const nextServiceId = updates.serviceId !== undefined ? updates.serviceId : existing.serviceId;
-
-    if (updates.endAt === undefined && nextStartAt && nextServiceId) {
-      const service = await colServices().findOne({ _id: nextServiceId });
-      if (service?.durationMin) {
-        updates.endAt = new Date(nextStartAt.getTime() + Number(service.durationMin) * 60000);
+    if (updates.endAt === undefined && nextStart && nextServiceId) {
+      const service = await Service.findById(nextServiceId);
+      if (service && service.durationMin) {
+        updates.endAt = new Date(nextStart.getTime() + Number(service.durationMin) * 60000);
       }
     }
-
-    const result = await colAppointments().updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { ...updates }, $currentDate: { updatedAt: true } },
-      { upsert: false }
-    );
-
-    if (result.matchedCount === 0) throw notFound('Appointment not found');
-
-    const updated = await colAppointments().findOne({ _id: new ObjectId(id) });
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: true, message: 'No fields to update' });
+    }
+    const updated = await Appointment.findByIdAndUpdate(id, updates, {
+      new: true,
+      runValidators: true,
+    });
+    if (!updated) {
+      return res.status(404).json({ error: true, message: 'Appointment not found' });
+    }
     return res.status(200).json(updated);
   } catch (err) {
     console.error('appointments.update error:', err);
-    const code = err.status || 500;
-    return res.status(code).json({ error: true, message: err.message || 'Internal Server Error' });
+    if (err.name === 'ValidationError' || err.name === 'CastError') {
+      return res.status(400).json({ error: true, message: err.message });
+    }
+    return next(err);
   }
 };
 
-// DELETE /appointments/:id
-const deleteAppointment = async (req, res) => {
+/**
+ * DELETE /appointments/:id
+ * Delete an appointment
+ */
+const deleteAppointment = async (req, res, next) => {
   try {
     const { id } = req.params;
-    if (!isValidId(id)) throw badRequest('Invalid appointment id');
-
-    const response = await colAppointments().deleteOne({ _id: new ObjectId(id) });
-    if (response.deletedCount > 0) {
-      return res.status(204).send();
+    if (!isValidId(id)) {
+      return res.status(400).json({ error: true, message: 'Invalid appointment id' });
     }
-    throw notFound('Appointment not found');
+    const deleted = await Appointment.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({ error: true, message: 'Appointment not found' });
+    }
+    return res.status(204).send();
   } catch (err) {
     console.error('appointments.delete error:', err);
-    const code = err.status || 500;
-    return res.status(code).json({ error: true, message: err.message || 'Internal Server Error' });
+    return next(err);
   }
 };
 
@@ -224,5 +253,5 @@ module.exports = {
   getSingle,
   createAppointment,
   updateAppointment,
-  deleteAppointment
+  deleteAppointment,
 };
