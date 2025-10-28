@@ -2,33 +2,101 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Prueba Google OAuth (popup)</title>
+    <title>Google OAuth Test (popup)</title>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; padding: 24px; }
+      #buttonDiv { margin-bottom: 16px; }
+      #logoutBtn { padding: 10px 16px; border-radius: 8px; border: 1px solid #ccc; background: #f6f6f6; cursor: pointer; }
+      #logoutBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+      #status { margin-top: 12px; color: #555; }
+    </style>
   </head>
   <body>
+    <h1>Google OAuth Test (popup)</h1>
     <div id="buttonDiv"></div>
+    <button id="logoutBtn" disabled>Sign out</button>
+    <div id="status">You are not signed in.</div>
 
     <script>
+      // Simple JWT decoder to extract the 'email' from the ID token
+      function parseJwt(token) {
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonPayload = decodeURIComponent(
+          atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
+        );
+        return JSON.parse(jsonPayload);
+      }
+
+      let signedInEmail = null;
+
       function handleCredentialResponse(response) {
-        const idToken = response.credential; // ID Token de Google
+        const idToken = response.credential;
+        const payload = parseJwt(idToken);
+        signedInEmail = payload.email || null;
+
+        // Send the token to your backend to create the app session
         fetch('http://localhost:8080/auth/google', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include', // Important if backend sets session cookies
           body: JSON.stringify({ idToken })
         })
           .then(r => r.json())
           .then(data => {
-            console.log('Respuesta backend:', data);
-            alert('Login con Google OK. Revisa la consola del navegador.');
+            console.log('Backend response:', data);
+            document.getElementById('status').textContent = 'Signed in as ' + (signedInEmail || '(unknown email)');
+            document.getElementById('logoutBtn').disabled = false;
+            alert('Google login successful. Check the browser console.');
           })
-          .catch(err => console.error(err));
+          .catch(err => {
+            console.error(err);
+            alert('Error signing in to backend.');
+          });
+      }
+
+      function doLogout() {
+        const btn = document.getElementById('logoutBtn');
+        btn.disabled = true;
+
+        // 1) Log out from your app (backend)
+        fetch('http://localhost:8080/auth/logout', {
+          method: 'POST',
+          credentials: 'include'
+        })
+        .catch(err => {
+          console.warn('Logout call failed:', err);
+        })
+        .finally(() => {
+          // 2) Disable Google auto-select
+          if (window.google && google.accounts && google.accounts.id) {
+            try { google.accounts.id.disableAutoSelect(); } catch(_) {}
+          }
+
+          // 3) Optionally revoke consent for this browser
+          if (signedInEmail && window.google && google.accounts && google.accounts.id && google.accounts.id.revoke) {
+            google.accounts.id.revoke(signedInEmail, done => {
+              console.log('Revoked for:', signedInEmail, done);
+              resetUI();
+            });
+          } else {
+            resetUI();
+          }
+        });
+      }
+
+      function resetUI() {
+        signedInEmail = null;
+        document.getElementById('status').textContent = 'You have signed out.';
+        document.getElementById('logoutBtn').disabled = true;
       }
 
       window.onload = function () {
         google.accounts.id.initialize({
           client_id: '937828160345-d0vl1st38905e6b8dguaig5qq9f7cc68.apps.googleusercontent.com',
           callback: handleCredentialResponse,
-          ux_mode: 'popup' // evita fricción con FedCM/One Tap
+          ux_mode: 'popup'
         });
 
         google.accounts.id.renderButton(
@@ -36,7 +104,7 @@
           { type: 'standard', theme: 'outline', size: 'large' }
         );
 
-        // No llamamos google.accounts.id.prompt() para mantener sólo popup
+        document.getElementById('logoutBtn').addEventListener('click', doLogout);
       };
     </script>
   </body>
