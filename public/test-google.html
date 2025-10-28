@@ -10,6 +10,7 @@
       #logoutBtn { padding: 10px 16px; border-radius: 8px; border: 1px solid #ccc; background: #f6f6f6; cursor: pointer; }
       #logoutBtn:disabled { opacity: 0.6; cursor: not-allowed; }
       #status { margin-top: 12px; color: #555; }
+      #err { margin-top: 12px; color: #b00020; white-space: pre-wrap; }
     </style>
   </head>
   <body>
@@ -17,9 +18,31 @@
     <div id="buttonDiv"></div>
     <button id="logoutBtn" disabled>Sign out</button>
     <div id="status">You are not signed in.</div>
+    <div id="err"></div>
 
     <script>
-      // Simple JWT decoder to extract the 'email' from the ID token
+      // === Config dinámico del backend =========================
+      // 1) Permite override por query: ?api=https://mi-backend.onrender.com
+      const urlParams = new URLSearchParams(location.search);
+      const apiFromQuery = urlParams.get('api');
+
+      // 2) Autodetecta local vs Render
+      const isLocal = /^(localhost|127\.0\.0\.1)$/i.test(location.hostname);
+      const DEFAULT_LOCAL = 'http://localhost:8080';
+      const DEFAULT_PROD  = 'https://cse431-project.onrender.com';
+
+      const API_BASE = (apiFromQuery || (isLocal ? DEFAULT_LOCAL : DEFAULT_PROD)).replace(/\/+$/, '');
+
+      // Utilidad para mostrar errores detallados
+      async function showFetchError(r) {
+        let txt;
+        try { txt = await r.text(); } catch { txt = ''; }
+        document.getElementById('err').textContent =
+          `Request: ${r.url}\nStatus: ${r.status} ${r.statusText}\n` +
+          (txt ? `Body:\n${txt}` : '(no body)');
+      }
+
+      // Decodifica JWT (solo para leer el email del id_token)
       function parseJwt(token) {
         const base64Url = token.split('.')[1];
         const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
@@ -31,59 +54,59 @@
 
       let signedInEmail = null;
 
-      function handleCredentialResponse(response) {
+      async function handleCredentialResponse(response) {
+        document.getElementById('err').textContent = '';
         const idToken = response.credential;
         const payload = parseJwt(idToken);
         signedInEmail = payload.email || null;
 
-        // Send the token to your backend to create the app session
-        fetch('http://localhost:8080/auth/google', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include', // Important if backend sets session cookies
-          body: JSON.stringify({ idToken })
-        })
-          .then(r => r.json())
-          .then(data => {
-            console.log('Backend response:', data);
-            document.getElementById('status').textContent = 'Signed in as ' + (signedInEmail || '(unknown email)');
-            document.getElementById('logoutBtn').disabled = false;
-            alert('Google login successful. Check the browser console.');
-          })
-          .catch(err => {
-            console.error(err);
-            alert('Error signing in to backend.');
+        try {
+          const r = await fetch(`${API_BASE}/auth/google`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include', // necesario si backend usa cookies de sesión
+            body: JSON.stringify({ idToken })
           });
+          if (!r.ok) {
+            await showFetchError(r);
+            alert('Error signing in to backend.');
+            return;
+          }
+          const data = await r.json();
+          console.log('Backend response:', data);
+          document.getElementById('status').textContent = 'Signed in as ' + (signedInEmail || '(unknown email)');
+          document.getElementById('logoutBtn').disabled = false;
+          alert('Google login successful. Check the browser console.');
+        } catch (err) {
+          document.getElementById('err').textContent = String(err);
+          alert('Error signing in to backend.');
+        }
       }
 
-      function doLogout() {
+      async function doLogout() {
         const btn = document.getElementById('logoutBtn');
         btn.disabled = true;
+        document.getElementById('err').textContent = '';
 
-        // 1) Log out from your app (backend)
-        fetch('http://localhost:8080/auth/logout', {
-          method: 'POST',
-          credentials: 'include'
-        })
-        .catch(err => {
-          console.warn('Logout call failed:', err);
-        })
-        .finally(() => {
-          // 2) Disable Google auto-select
-          if (window.google && google.accounts && google.accounts.id) {
+        try {
+          const r = await fetch(`${API_BASE}/auth/logout`, {
+            method: 'POST',
+            credentials: 'include'
+          });
+          if (!r.ok) await showFetchError(r);
+        } catch (e) {
+          document.getElementById('err').textContent = String(e);
+        } finally {
+          // Deshabilita autoselect de Google y (opcional) revoca
+          if (window.google?.accounts?.id) {
             try { google.accounts.id.disableAutoSelect(); } catch(_) {}
+            if (signedInEmail && google.accounts.id.revoke) {
+              google.accounts.id.revoke(signedInEmail, () => resetUI());
+              return;
+            }
           }
-
-          // 3) Optionally revoke consent for this browser
-          if (signedInEmail && window.google && google.accounts && google.accounts.id && google.accounts.id.revoke) {
-            google.accounts.id.revoke(signedInEmail, done => {
-              console.log('Revoked for:', signedInEmail, done);
-              resetUI();
-            });
-          } else {
-            resetUI();
-          }
-        });
+          resetUI();
+        }
       }
 
       function resetUI() {
@@ -98,13 +121,12 @@
           callback: handleCredentialResponse,
           ux_mode: 'popup'
         });
-
         google.accounts.id.renderButton(
           document.getElementById('buttonDiv'),
           { type: 'standard', theme: 'outline', size: 'large' }
         );
-
         document.getElementById('logoutBtn').addEventListener('click', doLogout);
+        console.log('API_BASE =', API_BASE);
       };
     </script>
   </body>
