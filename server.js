@@ -4,6 +4,11 @@ const cors = require('cors');
 const mongodb = require('./db/connect');
 const errorHandler = require('./middleware/error');
 
+// Load environment variables from .env if available. This allows
+// configuration of JWT secrets, Google client IDs, etc. during
+// development or deployment without hard‑coding them in the codebase.
+require('dotenv').config();
+
 const swaggerUi = require('swagger-ui-express');
 const rawSpec = require('./swagger.json');
 
@@ -64,10 +69,18 @@ app.get('/api-docs.json', (req, res) => {
 /* ---------- Rutas de la API ---------- */
 // Register explicit routes for each resource.  These take precedence over the
 // index router.  See ./routes for implementation details.
+// Authentication routes must be registered before protected resource routes
+// so that clients can obtain JWTs via /auth/* endpoints.
+app.use('/auth', require('./routes/auth'));
+
 app.use('/users', require('./routes/users'));
 app.use('/services', require('./routes/services'));
 app.use('/providers', require('./routes/providers'));
 app.use('/appointments', require('./routes/appointments'));
+
+// Serve static files from the "public" directory
+app.use(express.static('public'));
+
 
 // Fallback to the default index router (currently exposes Swagger UI)
 app.use('/', require('./routes'));

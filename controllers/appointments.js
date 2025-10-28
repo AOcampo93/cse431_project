@@ -16,7 +16,14 @@ const sanitize = (obj) =>
  */
 const getAll = async (req, res, next) => {
   try {
-    const appointments = await Appointment.find();
+    // If the requester is not an admin, return only appointments where they
+    // are the client. Admins get all appointments. Note: req.user is set
+    // by the authentication middleware on the route.
+    let filter = {};
+    if (req.user && req.user.role !== 'admin') {
+      filter.clientId = req.user.id;
+    }
+    const appointments = await Appointment.find(filter);
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).json(appointments);
   } catch (err) {
@@ -33,11 +40,23 @@ const getSingle = async (req, res, next) => {
   try {
     const { id } = req.params;
     if (!isValidId(id)) {
-      return res.status(400).json({ error: true, message: 'Invalid appointment id' });
+      return res
+        .status(400)
+        .json({ error: true, message: 'Invalid appointment id' });
     }
     const appointment = await Appointment.findById(id);
     if (!appointment) {
-      return res.status(404).json({ error: true, message: 'Appointment not found' });
+      return res
+        .status(404)
+        .json({ error: true, message: 'Appointment not found' });
+    }
+    // Non‑admins can only view their own appointments
+    if (req.user && req.user.role !== 'admin') {
+      if (appointment.clientId.toString() !== req.user.id) {
+        return res
+          .status(403)
+          .json({ error: true, message: 'Forbidden: cannot access this appointment' });
+      }
     }
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).json(appointment);
@@ -63,21 +82,37 @@ const createAppointment = async (req, res, next) => {
       notes,
       createdBy,
     } = req.body;
+    // If the requester is not an admin, force clientId to the authenticated user
+    if (req.user && req.user.role !== 'admin') {
+      clientId = req.user.id;
+      // Ensure createdBy is recorded
+      createdBy = req.user.id;
+    }
     // Validate required fields
     if (!clientId || !providerId || !serviceId || !startAt) {
-      return res.status(400).json({ error: true, message: 'clientId, providerId, serviceId and startAt are required' });
+      return res
+        .status(400)
+        .json({ error: true, message: 'clientId, providerId, serviceId and startAt are required' });
     }
     if (!isValidId(clientId)) {
-      return res.status(400).json({ error: true, message: 'clientId must be a valid ObjectId' });
+      return res
+        .status(400)
+        .json({ error: true, message: 'clientId must be a valid ObjectId' });
     }
     if (!isValidId(providerId)) {
-      return res.status(400).json({ error: true, message: 'providerId must be a valid ObjectId' });
+      return res
+        .status(400)
+        .json({ error: true, message: 'providerId must be a valid ObjectId' });
     }
     if (!isValidId(serviceId)) {
-      return res.status(400).json({ error: true, message: 'serviceId must be a valid ObjectId' });
+      return res
+        .status(400)
+        .json({ error: true, message: 'serviceId must be a valid ObjectId' });
     }
     if (createdBy && !isValidId(createdBy)) {
-      return res.status(400).json({ error: true, message: 'createdBy must be a valid ObjectId' });
+      return res
+        .status(400)
+        .json({ error: true, message: 'createdBy must be a valid ObjectId' });
     }
     // Convert to ObjectIds
     const clientObj = new mongoose.Types.ObjectId(clientId);
@@ -87,20 +122,26 @@ const createAppointment = async (req, res, next) => {
     // Convert dates
     const startDate = new Date(startAt);
     if (isNaN(startDate.getTime())) {
-      return res.status(400).json({ error: true, message: 'startAt must be a valid ISO date' });
+      return res
+        .status(400)
+        .json({ error: true, message: 'startAt must be a valid ISO date' });
     }
     let endDate = null;
     if (endAt) {
       const endD = new Date(endAt);
       if (isNaN(endD.getTime())) {
-        return res.status(400).json({ error: true, message: 'endAt must be a valid ISO date' });
+        return res
+          .status(400)
+          .json({ error: true, message: 'endAt must be a valid ISO date' });
       }
       endDate = endD;
     }
     // Validate status
     const allowedStatuses = ['scheduled', 'confirmed', 'completed', 'cancelled'];
     if (status && !allowedStatuses.includes(status)) {
-      return res.status(400).json({ error: true, message: 'status must be one of: scheduled, confirmed, completed, cancelled' });
+      return res
+        .status(400)
+        .json({ error: true, message: 'status must be one of: scheduled, confirmed, completed, cancelled' });
     }
     // Compute endAt if missing
     if (!endDate) {
@@ -108,7 +149,9 @@ const createAppointment = async (req, res, next) => {
       if (service && service.durationMin) {
         endDate = new Date(startDate.getTime() + Number(service.durationMin) * 60000);
       } else {
-        return res.status(400).json({ error: true, message: 'endAt is required when service has no durationMin' });
+        return res
+          .status(400)
+          .json({ error: true, message: 'endAt is required when service has no durationMin' });
       }
     }
     const appointment = new Appointment({
@@ -126,10 +169,14 @@ const createAppointment = async (req, res, next) => {
   } catch (err) {
     console.error('appointments.create error:', err);
     if (err.name === 'ValidationError') {
-      return res.status(400).json({ error: true, message: err.message });
+      return res
+        .status(400)
+        .json({ error: true, message: err.message });
     }
     if (err.name === 'CastError') {
-      return res.status(400).json({ error: true, message: 'Invalid ObjectId provided' });
+      return res
+        .status(400)
+        .json({ error: true, message: 'Invalid ObjectId provided' });
     }
     return next(err);
   }
@@ -143,49 +190,75 @@ const updateAppointment = async (req, res, next) => {
   try {
     const { id } = req.params;
     if (!isValidId(id)) {
-      return res.status(400).json({ error: true, message: 'Invalid appointment id' });
+      return res
+        .status(400)
+        .json({ error: true, message: 'Invalid appointment id' });
     }
     const existing = await Appointment.findById(id);
     if (!existing) {
-      return res.status(404).json({ error: true, message: 'Appointment not found' });
+      return res
+        .status(404)
+        .json({ error: true, message: 'Appointment not found' });
+    }
+    // Non‑admin users can only update their own appointments
+    if (req.user && req.user.role !== 'admin') {
+      if (existing.clientId.toString() !== req.user.id) {
+        return res
+          .status(403)
+          .json({ error: true, message: 'Forbidden: cannot modify this appointment' });
+      }
     }
     const updates = {};
-    if (req.body.clientId !== undefined) {
+    // Only admins can change the clientId. Regular users cannot reassign
+    // appointments to another client.
+    if (req.body.clientId !== undefined && req.user && req.user.role === 'admin') {
       if (!isValidId(req.body.clientId)) {
-        return res.status(400).json({ error: true, message: 'clientId must be a valid ObjectId' });
+        return res
+          .status(400)
+          .json({ error: true, message: 'clientId must be a valid ObjectId' });
       }
       updates.clientId = new mongoose.Types.ObjectId(req.body.clientId);
     }
     if (req.body.providerId !== undefined) {
       if (!isValidId(req.body.providerId)) {
-        return res.status(400).json({ error: true, message: 'providerId must be a valid ObjectId' });
+        return res
+          .status(400)
+          .json({ error: true, message: 'providerId must be a valid ObjectId' });
       }
       updates.providerId = new mongoose.Types.ObjectId(req.body.providerId);
     }
     if (req.body.serviceId !== undefined) {
       if (!isValidId(req.body.serviceId)) {
-        return res.status(400).json({ error: true, message: 'serviceId must be a valid ObjectId' });
+        return res
+          .status(400)
+          .json({ error: true, message: 'serviceId must be a valid ObjectId' });
       }
       updates.serviceId = new mongoose.Types.ObjectId(req.body.serviceId);
     }
     if (req.body.startAt !== undefined) {
       const start = new Date(req.body.startAt);
       if (isNaN(start.getTime())) {
-        return res.status(400).json({ error: true, message: 'startAt must be a valid ISO date' });
+        return res
+          .status(400)
+          .json({ error: true, message: 'startAt must be a valid ISO date' });
       }
       updates.startAt = start;
     }
     if (req.body.endAt !== undefined) {
       const end = new Date(req.body.endAt);
       if (isNaN(end.getTime())) {
-        return res.status(400).json({ error: true, message: 'endAt must be a valid ISO date' });
+        return res
+          .status(400)
+          .json({ error: true, message: 'endAt must be a valid ISO date' });
       }
       updates.endAt = end;
     }
     if (req.body.status !== undefined) {
       const allowedStatuses = ['scheduled', 'confirmed', 'completed', 'cancelled'];
       if (!allowedStatuses.includes(req.body.status)) {
-        return res.status(400).json({ error: true, message: 'status must be one of: scheduled, confirmed, completed, cancelled' });
+        return res
+          .status(400)
+          .json({ error: true, message: 'status must be one of: scheduled, confirmed, completed, cancelled' });
       }
       updates.status = req.body.status;
     }
@@ -193,10 +266,19 @@ const updateAppointment = async (req, res, next) => {
       updates.notes = req.body.notes;
     }
     if (req.body.createdBy !== undefined) {
-      if (req.body.createdBy && !isValidId(req.body.createdBy)) {
-        return res.status(400).json({ error: true, message: 'createdBy must be a valid ObjectId' });
+      // Only admins can modify createdBy
+      if (req.user && req.user.role !== 'admin') {
+        // ignore silently
+      } else {
+        if (req.body.createdBy && !isValidId(req.body.createdBy)) {
+          return res
+            .status(400)
+            .json({ error: true, message: 'createdBy must be a valid ObjectId' });
+        }
+        updates.createdBy = req.body.createdBy
+          ? new mongoose.Types.ObjectId(req.body.createdBy)
+          : undefined;
       }
-      updates.createdBy = req.body.createdBy ? new mongoose.Types.ObjectId(req.body.createdBy) : undefined;
     }
     // Compute endAt if not provided but start/service changed
     const nextStart = updates.startAt !== undefined ? updates.startAt : existing.startAt;
@@ -208,20 +290,26 @@ const updateAppointment = async (req, res, next) => {
       }
     }
     if (Object.keys(updates).length === 0) {
-      return res.status(400).json({ error: true, message: 'No fields to update' });
+      return res
+        .status(400)
+        .json({ error: true, message: 'No fields to update' });
     }
     const updated = await Appointment.findByIdAndUpdate(id, updates, {
       new: true,
       runValidators: true,
     });
     if (!updated) {
-      return res.status(404).json({ error: true, message: 'Appointment not found' });
+      return res
+        .status(404)
+        .json({ error: true, message: 'Appointment not found' });
     }
     return res.status(200).json(updated);
   } catch (err) {
     console.error('appointments.update error:', err);
     if (err.name === 'ValidationError' || err.name === 'CastError') {
-      return res.status(400).json({ error: true, message: err.message });
+      return res
+        .status(400)
+        .json({ error: true, message: err.message });
     }
     return next(err);
   }
@@ -235,12 +323,25 @@ const deleteAppointment = async (req, res, next) => {
   try {
     const { id } = req.params;
     if (!isValidId(id)) {
-      return res.status(400).json({ error: true, message: 'Invalid appointment id' });
+      return res
+        .status(400)
+        .json({ error: true, message: 'Invalid appointment id' });
     }
-    const deleted = await Appointment.findByIdAndDelete(id);
-    if (!deleted) {
-      return res.status(404).json({ error: true, message: 'Appointment not found' });
+    const appointment = await Appointment.findById(id);
+    if (!appointment) {
+      return res
+        .status(404)
+        .json({ error: true, message: 'Appointment not found' });
     }
+    // Only admins or owners can delete
+    if (req.user && req.user.role !== 'admin') {
+      if (appointment.clientId.toString() !== req.user.id) {
+        return res
+          .status(403)
+          .json({ error: true, message: 'Forbidden: cannot delete this appointment' });
+      }
+    }
+    await appointment.deleteOne();
     return res.status(204).send();
   } catch (err) {
     console.error('appointments.delete error:', err);

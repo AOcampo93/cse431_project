@@ -1,6 +1,8 @@
 const router = require('express').Router();
 const servicesController = require('../controllers/services');
 const validateObjectId = require('../middleware/validateObjectId');
+const authenticate = require('../middleware/auth');
+const authorize = require('../middleware/authorize');
 
 /*
  * Routes for managing services
@@ -8,10 +10,13 @@ const validateObjectId = require('../middleware/validateObjectId');
  * Base route: /services
  */
 
+// Anyone can read services
 router.get('/', servicesController.getAll);
 router.get('/:id', validateObjectId, servicesController.getSingle);
-router.post('/', servicesController.createService);
-router.put('/:id', validateObjectId, servicesController.updateService);
-router.delete('/:id', validateObjectId, servicesController.deleteService);
+
+// Creating, updating and deleting services is restricted to admins
+router.post('/', authenticate, authorize('admin'), servicesController.createService);
+router.put('/:id', authenticate, authorize('admin'), validateObjectId, servicesController.updateService);
+router.delete('/:id', authenticate, authorize('admin'), validateObjectId, servicesController.deleteService);
 
 module.exports = router;
