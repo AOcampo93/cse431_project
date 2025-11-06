@@ -52,6 +52,13 @@ const getSingle = async (req, res, next) => {
 const createService = async (req, res, next) => {
   try {
     const { name, durationMin, price, description, category, isActive } = req.body;
+    // Required fields validation
+    if (!name || durationMin === undefined || price === undefined) {
+      return res.status(400).json({
+        error: true,
+        message: 'name, durationMin and price are required',
+      });
+    }
     const service = new Service({
       name,
       durationMin,

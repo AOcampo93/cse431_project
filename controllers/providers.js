@@ -52,6 +52,13 @@ const getSingle = async (req, res, next) => {
 const createProvider = async (req, res, next) => {
   try {
     const { name, email, phone, specialties, availability, isActive } = req.body;
+    // Ensure required fields are present
+    if (!name || !email) {
+      return res.status(400).json({
+        error: true,
+        message: 'name and email are required',
+      });
+    }
     const provider = new Provider({
       name,
       email,

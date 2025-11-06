@@ -24,6 +24,11 @@
       "name": "Appointments",
       "description": "Operations about appointments"
     }
+    ,
+    {
+      "name": "Authentication",
+      "description": "User authentication operations"
+    }
   ],
   "schemes": [
     "http"
@@ -33,6 +38,19 @@
   ],
   "produces": [
     "application/json"
+  ],
+  "securityDefinitions": {
+    "BearerAuth": {
+      "type": "apiKey",
+      "name": "Authorization",
+      "in": "header",
+      "description": "Use 'Bearer <token>' for JWT authentication"
+    }
+  },
+  "security": [
+    {
+      "BearerAuth": []
+    }
   ],
   "paths": {
     "/users/": {
@@ -462,9 +480,78 @@
           }
         }
       }
-    }
-  },
-  "definitions": {
+        }
+        ,
+        "/auth/register": {
+          "post": {
+            "tags": ["Authentication"],
+            "summary": "Register a new user",
+            "parameters": [
+              {
+                "name": "body",
+                "in": "body",
+                "schema": {
+                  "$ref": "#/definitions/UserInput"
+                }
+              }
+            ],
+            "responses": {
+              "201": { "description": "Created with token" },
+              "400": { "description": "Invalid input" },
+              "409": { "description": "Email already in use" }
+            }
+          }
+        },
+        "/auth/login": {
+          "post": {
+            "tags": ["Authentication"],
+            "summary": "Authenticate a user and return a token",
+            "parameters": [
+              {
+                "name": "body",
+                "in": "body",
+                "schema": {
+                  "$ref": "#/definitions/LoginInput"
+                }
+              }
+            ],
+            "responses": {
+              "200": { "description": "OK with token" },
+              "400": { "description": "Missing email or password" },
+              "401": { "description": "Invalid credentials" }
+            }
+          }
+        },
+        "/auth/google": {
+          "post": {
+            "tags": ["Authentication"],
+            "summary": "Authenticate via Google idToken",
+            "parameters": [
+              {
+                "name": "body",
+                "in": "body",
+                "schema": {
+                  "$ref": "#/definitions/GoogleInput"
+                }
+              }
+            ],
+            "responses": {
+              "200": { "description": "OK with token" },
+              "400": { "description": "Missing or invalid idToken" }
+            }
+          }
+        },
+        "/auth/logout": {
+          "post": {
+            "tags": ["Authentication"],
+            "summary": "Logout a user",
+            "responses": {
+              "200": { "description": "Logged out successfully" }
+            }
+          }
+        }
+      },
+      "definitions": {
     "User": {
       "type": "object",
       "properties": {
@@ -564,6 +651,19 @@
         "notes": { "type": "string", "example": "Primera sesión" },
         "createdBy": { "type": "string", "example": "66f..." }
       }
-    }
-  }
+        },
+        "LoginInput": {
+          "type": "object",
+          "properties": {
+            "email": { "type": "string", "example": "user@example.com" },
+            "password": { "type": "string", "example": "password123" }
+          }
+        },
+        "GoogleInput": {
+          "type": "object",
+          "properties": {
+            "idToken": { "type": "string", "example": "GOOGLE_ID_TOKEN" }
+          }
+        }
+      }
 }

@@ -1,5 +1,6 @@
 // controllers/users.js
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 const User = require('../models/user');
 
 /**
@@ -62,18 +63,34 @@ const createUser = async (req, res, next) => {
       role,
       avatarUrl,
     } = req.body;
-    const user = new User({
+    // Basic validation: ensure required fields are provided
+    if (!authProvider || !email || !name) {
+      return res.status(400).json({
+        error: true,
+        message: 'authProvider, email and name are required',
+      });
+    }
+    // Check if a user already exists with this email
+    const existing = await User.findOne({ email });
+    if (existing) {
+      return res.status(409).json({ error: true, message: 'Email already in use' });
+    }
+    // Prepare new user object; hash password if provided
+    const newUser = new User({
       authProvider,
       authId,
       email,
-      password,
       name,
       phone,
       role,
       avatarUrl,
     });
-    await user.save();
-    return res.status(201).json(user);
+    if (password) {
+      const saltRounds = 10;
+      newUser.password = await bcrypt.hash(password, saltRounds);
+    }
+    await newUser.save();
+    return res.status(201).json(newUser);
   } catch (err) {
     console.error('createUser error:', err);
     if (err?.code === 11000) {
